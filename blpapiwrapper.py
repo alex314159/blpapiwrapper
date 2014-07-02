@@ -40,10 +40,9 @@ class BLP():
         request = self.refDataSvc.createRequest('HistoricalDataRequest')
         request.append('securities', strSecurity)
         if type(strData) == str:
-            request.append('fields',strData)
-        else:
-            for strD in strData:
-                request.append('fields',strD)
+            strData=[strData]
+        for strD in strData:
+            request.append('fields',strD)
         request.set('startDate',startdate.strftime('%Y%m%d'))
         request.set('endDate',enddate.strftime('%Y%m%d'))
         request.set('periodicitySelection', periodicity);
@@ -57,12 +56,9 @@ class BLP():
         size = fieldDataArray.numValues()
         fieldDataList = [fieldDataArray.getValueAsElement(i) for i in range(0,size)]
         outDates = [x.getElementAsDatetime('date') for x in fieldDataList]
-        if type(strData) == str:
-            output = pandas.TimeSeries(data=[x.getElementAsFloat(strData) for x in fieldDataList],index=outDates,name=strData)
-        else:
-            output = pandas.DataFrame(index=outDates,columns=strData)
-            for strD in strData:
-                output[strD] = [x.getElementAsFloat(strD) for x in fieldDataList]
+        output = pandas.DataFrame(index=outDates,columns=strData)
+        for strD in strData:
+            output[strD] = [x.getElementAsFloat(strD) for x in fieldDataList]
         output.replace('#N/A History',pandas.np.nan,inplace=True)
         output.index = output.index.to_datetime()
         return output

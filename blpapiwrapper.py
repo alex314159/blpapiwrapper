@@ -1,3 +1,10 @@
+"""
+Python wrapper to emulate Excel blp and bdh through Bloomberg Open API
+
+Written by Alexandre Almosni
+"""
+
+
 import blpapi
 import datetime
 import pandas

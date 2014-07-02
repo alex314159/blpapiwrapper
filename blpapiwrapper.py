@@ -26,8 +26,7 @@ class BLP():
             o.setElement('fieldId',strOverrideField)
             o.setElement('value',strOverrideValue)
         requestID = self.session.sendRequest(request)
-        continueToLoop = True
-        while continueToLoop:
+        while True:
             event = self.session.nextEvent()
             if event.eventType() == blpapi.event.Event.RESPONSE:
                 break
@@ -50,8 +49,7 @@ class BLP():
         request.set('endDate',enddate.strftime('%Y%m%d'))
         request.set('periodicitySelection', periodicity);
         requestID = self.session.sendRequest(request)
-        continueToLoop = True
-        while (continueToLoop):
+        while True:
             event = self.session.nextEvent()
             if event.eventType() == blpapi.event.Event.RESPONSE:
                 break
@@ -62,13 +60,11 @@ class BLP():
         fieldDataList = [fieldDataArray.getValueAsElement(i) for i in range(0,size)]
         outDates = [x.getElementAsDatetime('date') for x in fieldDataList]
         if type(strData) == str:
-            outData = [x.getElementAsFloat(strData) for x in fieldDataList]
-            output = pandas.TimeSeries(data=outData,index=outDates,name=strData)
+            output = pandas.TimeSeries(data=[x.getElementAsFloat(strData) for x in fieldDataList],index=outDates,name=strData)
         else:
             output = pandas.DataFrame(index=outDates,columns=strData)
             for strD in strData:
-                outData = [x.getElementAsFloat(strD) for x in fieldDataList]
-                output[strD] = outData
+                output[strD] = [x.getElementAsFloat(strD) for x in fieldDataList]
         output.replace('#N/A History',pandas.np.nan,inplace=True)
         output.index = output.index.to_datetime()
         return output

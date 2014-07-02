@@ -53,8 +53,7 @@ class BLP():
                 break
         msg = blpapi.event.MessageIterator(event).next()
         fieldDataArray = msg.getElement('securityData').getElement('fieldData')
-        size = fieldDataArray.numValues()
-        fieldDataList = [fieldDataArray.getValueAsElement(i) for i in range(0,size)]
+        fieldDataList = [fieldDataArray.getValueAsElement(i) for i in range(0,fieldDataArray.numValues())]
         outDates = [x.getElementAsDatetime('date') for x in fieldDataList]
         output = pandas.DataFrame(index=outDates,columns=strData)
         for strD in strData:

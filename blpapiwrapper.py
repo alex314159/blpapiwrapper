@@ -30,8 +30,7 @@ class BLP():
             event = self.session.nextEvent()
             if event.eventType() == blpapi.event.Event.RESPONSE:
                 break
-        msg = blpapi.event.MessageIterator(event).next()
-        output = msg.getElement('securityData').getValueAsElement(0).getElement('fieldData').getElementAsString(strData)
+        output = blpapi.event.MessageIterator(event).next().getElement('securityData').getValueAsElement(0).getElement('fieldData').getElementAsString(strData)
         if output == '#N/A':
             output = pandas.np.nan
         return output
@@ -51,8 +50,7 @@ class BLP():
             event = self.session.nextEvent()
             if event.eventType() == blpapi.event.Event.RESPONSE:
                 break
-        msg = blpapi.event.MessageIterator(event).next()
-        fieldDataArray = msg.getElement('securityData').getElement('fieldData')
+        fieldDataArray = blpapi.event.MessageIterator(event).next().getElement('securityData').getElement('fieldData')
         fieldDataList = [fieldDataArray.getValueAsElement(i) for i in range(0,fieldDataArray.numValues())]
         outDates = [x.getElementAsDatetime('date') for x in fieldDataList]
         output = pandas.DataFrame(index=outDates,columns=strData)

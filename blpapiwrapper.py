@@ -12,6 +12,7 @@ import pandas
 class BLP():
 
     def __init__(self):
+        #Bloomberg session created only once here - makes consecutive bdp() and bdh() calls faster
         self.session = blpapi.Session()
         self.session.start()
         self.session.openService('//BLP/refdata')

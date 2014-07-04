@@ -1,5 +1,5 @@
 """
-Python wrapper to emulate Excel blp and bdh through Bloomberg Open API
+Python wrapper to emulate Excel bdp and bdh through Bloomberg Open API
 
 Written by Alexandre Almosni
 """

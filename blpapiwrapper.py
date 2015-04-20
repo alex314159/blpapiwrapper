@@ -8,8 +8,10 @@ Written by Alexandre Almosni
 import blpapi
 import datetime
 import pandas
+import threading
 
 class BLP():
+    #The Request/Response Paradigm
 
     def __init__(self):
         #Bloomberg session created only once here - makes consecutive bdp() and bdh() calls faster
@@ -68,7 +70,66 @@ class BLP():
         self.session.stop()
 
 
+class BLPStream(threading.Thread):
+    #The Subscription Paradigm
+    #The subscribed data will be sitting in self.output and update automatically
+
+    def __init__(self, strSecurityList=['ESM5 Index','VGM5 Index'], strDataList=['BID','ASK'], floatInterval=1, intCorrIDList=[0,1]):
+        #floatInterval is the minimum amount of time before updates
+        #intCorrID is a user defined ID for the request
+        threading.Thread.__init__(self)
+        self.session = blpapi.Session()
+        self.session.start()
+        self.session.openService("//BLP/mktdata")
+        if type(strSecurityList)== str:
+            strSecurityList=[strSecurityList]
+        if type(intCorrIDList)== str:
+            intCorrIDList=[intCorrIDList]
+        if type(strDataList)== str:
+            strDataList=[strDataList]
+        self.strSecurityList=strSecurityList
+        self.strDataList=strDataList
+        if len(strSecurityList)!=len(intCorrIDList):
+            print 'Number of securities needs to match number of Correlation IDs, overwriting IDs'
+            self.intCorrIDList=range(0,len(strSecurityList))
+        else:
+            self.intCorrIDList=intCorrIDList
+        self.subscriptionList=blpapi.subscriptionlist.SubscriptionList()
+        for (security, intCorrID) in zip(self.strSecurityList,self.intCorrIDList):
+            self.subscriptionList.add(security, self.strDataList, "interval="+str(floatInterval), blpapi.CorrelationId(intCorrID))
+        self.output=pandas.DataFrame(index=self.strSecurityList, columns=self.strDataList)
+        self.dictCorrID=dict(zip(self.intCorrIDList,self.strSecurityList))
+        self.lastUpdate=''#Warning - if you mix live and delayed data you could have non increasing data
+        
+    def run(self):
+        self.session.subscribe(self.subscriptionList)
+        while True:
+            event = self.session.nextEvent()
+            if event.eventType() == blpapi.event.Event.SUBSCRIPTION_DATA:
+                self.handleDataEvent(event)
+            else:
+                self.handleOtherEvent(event)
+
+    def handleDataEvent(self,event):
+        output=blpapi.event.MessageIterator(event).next() 
+        if output.hasElement("TIME"):
+            self.lastUpdate=output.getElement("TIME").toString()
+        for i in range(0,len(self.output.columns)):
+            data=self.strDataList[i]
+            if output.hasElement(data):
+                security=self.dictCorrID[output.correlationIds()[0].value()]
+                self.output.loc[security,data]=output.getElement(data).getValueAsFloat()
+
+    def handleOtherEvent(self,event):
+        #print "Other event: event "+str(event.eventType())
+        pass
+
+    def closeSubscription(self):
+        self.session.unsubscribe(self.subscriptionList)
+
+
 def main():
+    ##Examples of the Request/Response Paradigm
     bloomberg=BLP()
     print bloomberg.bdp()
     print ''

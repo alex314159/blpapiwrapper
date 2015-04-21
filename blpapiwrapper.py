@@ -75,7 +75,7 @@ class BLPStream(threading.Thread):
     #The subscribed data will be sitting in self.output and update automatically
 
     def __init__(self, strSecurityList=['ESM5 Index','VGM5 Index'], strDataList=['BID','ASK'], floatInterval=1, intCorrIDList=[0,1]):
-        #floatInterval is the minimum amount of time before updates
+        #floatInterval is the minimum amount of time before updates - sometimes needs to be set at 0 for things to work properly
         #intCorrID is a user defined ID for the request
         threading.Thread.__init__(self)
         self.session = blpapi.Session()

@@ -1,5 +1,5 @@
 """
-Python wrapper to emulate Excel bdp and bdh through Bloomberg Open API
+Python wrapper to emulate Excel blp and bdh through Bloomberg Open API
 
 Written by Alexandre Almosni
 """
@@ -9,12 +9,12 @@ import blpapi
 import datetime
 import pandas
 import threading
+from abc import ABCMeta, abstractmethod
 
 class BLP():
     #The Request/Response Paradigm
 
     def __init__(self):
-        #Bloomberg session created only once here - makes consecutive bdp() and bdh() calls faster
         self.session = blpapi.Session()
         self.session.start()
         self.session.openService('//BLP/refdata')
@@ -74,7 +74,7 @@ class BLPStream(threading.Thread):
     #The Subscription Paradigm
     #The subscribed data will be sitting in self.output and update automatically
 
-    def __init__(self, strSecurityList=['ESM5 Index','VGM5 Index'], strDataList=['BID','ASK'], floatInterval=1, intCorrIDList=[0,1]):
+    def __init__(self, strSecurityList=['ESM5 Index','VGM5 Index'], strDataList=['BID','ASK'], floatInterval=0, intCorrIDList=[0,1]):
         #floatInterval is the minimum amount of time before updates - sometimes needs to be set at 0 for things to work properly
         #intCorrID is a user defined ID for the request
         threading.Thread.__init__(self)
@@ -83,7 +83,7 @@ class BLPStream(threading.Thread):
         self.session.openService("//BLP/mktdata")
         if type(strSecurityList)== str:
             strSecurityList=[strSecurityList]
-        if type(intCorrIDList)== str:
+        if type(intCorrIDList)== int:
             intCorrIDList=[intCorrIDList]
         if type(strDataList)== str:
             strDataList=[strDataList]
@@ -99,8 +99,26 @@ class BLPStream(threading.Thread):
             self.subscriptionList.add(security, self.strDataList, "interval="+str(floatInterval), blpapi.CorrelationId(intCorrID))
         self.output=pandas.DataFrame(index=self.strSecurityList, columns=self.strDataList)
         self.dictCorrID=dict(zip(self.intCorrIDList,self.strSecurityList))
-        self.lastUpdate=''#Warning - if you mix live and delayed data you could have non increasing data
-        
+        self.lastUpdateTimeBlmbrg=''#Warning - if you mix live and delayed data you could have non increasing data
+        self.lastUpdateTime=datetime.datetime(1900,1,1)
+        self.observers = []
+    
+    def register(self, observer):
+        if not observer in self.observers:
+            self.observers.append(observer)
+ 
+    def unregister(self, observer):
+        if observer in self.observers:
+            self.observers.remove(observer)
+ 
+    def unregisterAll(self):
+        if self.observers:
+            del self.observers[:]
+ 
+    def updateObservers(self, *args, **kwargs):
+        for observer in self.observers:
+            observer.update(*args, **kwargs)
+
     def run(self):
         self.session.subscribe(self.subscriptionList)
         while True:
@@ -111,14 +129,18 @@ class BLPStream(threading.Thread):
                 self.handleOtherEvent(event)
 
     def handleDataEvent(self,event):
-        output=blpapi.event.MessageIterator(event).next() 
-        if output.hasElement("TIME"):
-            self.lastUpdate=output.getElement("TIME").toString()
+        output=blpapi.event.MessageIterator(event).next()
+        self.lastUpdateTime=datetime.datetime.now()
+        if output.hasElement("EVENT_TIME"):
+            self.lastUpdateTimeBlmbrg=output.getElement("EVENT_TIME").toString()
         for i in range(0,len(self.output.columns)):
-            data=self.strDataList[i]
-            if output.hasElement(data):
-                security=self.dictCorrID[output.correlationIds()[0].value()]
-                self.output.loc[security,data]=output.getElement(data).getValueAsFloat()
+            field=self.strDataList[i]
+            if output.hasElement(field):
+                corrID=output.correlationIds()[0].value()
+                security=self.dictCorrID[corrID]
+                data=output.getElement(field).getValueAsFloat()
+                self.output.loc[security,field]=data
+                self.updateObservers(time=self.lastUpdateTime, security=security, field=field, corrID=corrID, data=data, bbgTime=self.lastUpdateTimeBlmbrg)
 
     def handleOtherEvent(self,event):
         #print "Other event: event "+str(event.eventType())
@@ -127,6 +149,25 @@ class BLPStream(threading.Thread):
     def closeSubscription(self):
         self.session.unsubscribe(self.subscriptionList)
 
+
+class Observer(object):
+    __metaclass__ = ABCMeta
+ 
+    @abstractmethod
+    def update(self, *args, **kwargs):
+        pass
+
+class ObserverExample(Observer):
+    def update(self, *args, **kwargs):
+        output = kwargs['time'].strftime("%Y-%m-%d %H:%M:%S")+' received '+ kwargs['security'] + ' ' + kwargs['field'] + '=' + str(kwargs['data'])
+        output = output + '. CorrID '+str(kwargs['corrID']) + ' bbgTime ' + kwargs['bbgTime']
+        print output
+
+def streamPatternExample():
+    stream=BLPStream('ESM5 Index','BID',0,1)
+    obs=ObserverExample()
+    stream.register(obs)
+    stream.start()
 
 def main():
     ##Examples of the Request/Response Paradigm

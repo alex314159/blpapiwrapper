@@ -14,3 +14,5 @@ The Response/Request paradigm and the Subscription paradigm are both implemented
 For the Response/Request paradigm the bdp output comes as a string, the bdh output comes as pandas DataFrame. Check the main() function for examples.
 
 For the Subscription paradigm the class instance needs to be initialized then one needs to run class.start() to get streaming data. The variable class.output is a pandas DataFrame with the latest data.
+
+The Observer pattern is also implemented for the subscription paradigm.

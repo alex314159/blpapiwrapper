@@ -1,7 +1,8 @@
 """
-Python wrapper to emulate Excel blp and bdh through Bloomberg Open API
-
+Python wrapper to download data through the Bloomberg Open API
 Written by Alexandre Almosni
+(C) 2014-2015 Alexandre Almosni
+Released under Apache 2.0 license. More info at http://www.apache.org/licenses/LICENSE-2.0
 """
 
 
@@ -12,7 +13,10 @@ import threading
 from abc import ABCMeta, abstractmethod
 
 class BLP():
-    #The Request/Response Paradigm
+    """Naive implementation of the Request/Response Paradigm closely matching the Excel API.
+    Sharing one session for subsequent requests is faster, however it is not thread-safe, as some events can come faster than others.
+    bdp returns a string, bdh returns a pandas DataFrame.
+    """
 
     def __init__(self):
         self.session = blpapi.Session()
@@ -33,8 +37,12 @@ class BLP():
             event = self.session.nextEvent()
             if event.eventType() == blpapi.event.Event.RESPONSE:
                 break
-        output = blpapi.event.MessageIterator(event).next().getElement('securityData').getValueAsElement(0).getElement('fieldData').getElementAsString(strData)
-        if output == '#N/A':
+        try:
+            output = blpapi.event.MessageIterator(event).next().getElement('securityData').getValueAsElement(0).getElement('fieldData').getElementAsString(strData)
+            if output == '#N/A':
+                output = pandas.np.nan
+        except:
+            print 'error with '+strSecurity+' '+strData
             output = pandas.np.nan
         return output
 
@@ -70,13 +78,133 @@ class BLP():
         self.session.stop()
 
 
+class BLPTS():
+    """Thread-safe implementation of the Request/Response Paradigm.
+    The functions don't return anything but notify observers of results.
+    Including startDate as a keyword argument will define a HistoricalDataRequest, otherwise it will be a ReferenceDataRequest.
+    HistoricalDataRequest sends observers a pandas DataFrame, whereas ReferenceDataRequest sends a pandas Series.
+    Override seems to only work when there's one security, one field, and one override.
+    Examples:
+    BLPTS(['ESA Index','VGA Index'],['BID','ASK'])
+    BLPTSNew('US900123AL40 Govt','YLD_YTM_BID',strOverrideField='PX_BID',strOverrideValue='200')
+    BLPTSNew(['SPX Index','SX5E Index','EUR Curncy'],['PX_LAST','VOLUME'],startDate=datetime.datetime(2014,1,1),endDate=datetime.datetime(2015,5,14),periodicity='DAILY')
+    """
+
+    def __init__(self,securities=[], fields=[], **kwargs):
+        self.session = blpapi.Session()
+        self.session.start()
+        self.session.openService('//BLP/refdata')
+        self.refDataSvc = self.session.getService('//BLP/refdata')
+        self.observers = []
+        self.kwargs=kwargs
+        if len(securities)>0 and len(fields)>0:#also works if securities and fields are a string
+            self.fillRequest(securities,fields,**kwargs)
+
+    def fillRequest(self, securities, fields, **kwargs):
+        self.kwargs=kwargs
+        if 'startDate' in kwargs:
+            self.request = self.refDataSvc.createRequest('HistoricalDataRequest')
+            self.startDate = kwargs['startDate']
+            self.endDate = kwargs['endDate']
+            if 'periodicity' in kwargs:
+                self.periodicity = kwargs['periodicity']
+            else:
+                self.periodicity='DAILY'
+            self.request.set('startDate', self.startDate.strftime('%Y%m%d'))
+            self.request.set('endDate', self.endDate.strftime('%Y%m%d'))
+            self.request.set('periodicitySelection', self.periodicity)
+        else:
+            self.request = self.refDataSvc.createRequest('ReferenceDataRequest')
+            if 'strOverrideField' in kwargs:
+                o = self.request.getElement('overrides').appendElement()
+                o.setElement('fieldId',kwargs['strOverrideField'])
+                o.setElement('value',kwargs['strOverrideValue'])
+        if type(securities)==str:
+            securities=[securities]
+        if type(fields)==str:
+            fields=[fields]
+        self.securities=securities
+        self.fields=fields
+        for s in securities:
+            self.request.append('securities', s)
+        for f in fields:
+            self.request.append('fields',f)
+
+    def get(self,newSecurities=[], newFields=[], **kwargs):
+        if len(newSecurities)>0 or len(newFields)>0:
+            self.fillRequest(newSecurities,newFields,**kwargs)
+        self.requestID = self.session.sendRequest(self.request)
+        while True:
+            event = self.session.nextEvent()
+            if event.eventType() == blpapi.event.Event.RESPONSE or event.eventType() == blpapi.event.Event.PARTIAL_RESPONSE:
+                responseSize=blpapi.event.MessageIterator(event).next().getElement('securityData').numValues()
+                for i in range(0,responseSize):
+                    try:
+                        if 'startDate' in self.kwargs:#HistoricalDataRequest
+                            output = blpapi.event.MessageIterator(event).next().getElement('securityData')
+                            security = output.getElement('security').getValueAsString()
+                            fieldDataArray = output.getElement('fieldData')
+                            fieldDataList = [fieldDataArray.getValueAsElement(i) for i in range(0,fieldDataArray.numValues())]
+                            dates=map(lambda x:x.getElement('date').getValueAsString(),fieldDataList)
+                            outDF=pandas.DataFrame(index=dates,columns=self.fields)
+                            outDF.index=outDF.index.to_datetime()
+                            for field in self.fields:
+                                data=[]
+                                for row in fieldDataList:
+                                    if row.hasElement(field):
+                                        data.append(row.getElement(field).getValueAsFloat())
+                                    else:
+                                        data.append(pandas.np.nan)
+                                outDF[field]=data
+                                self.updateObservers(security=security, field=field, data=outDF)
+                        else:#ReferenceDataRequest
+                            output = blpapi.event.MessageIterator(event).next().getElement('securityData').getValueAsElement(i)
+                            outDF=pandas.Series(index=self.fields)
+                            for j in range(0,output.getElement('fieldData').numElements()):
+                                data=output.getElement('fieldData').getElement(j)
+                                security=output.getElement('security').getValueAsString()
+                                field=str(data.name())
+                                outData=data.getValueAsString()
+                                outDF[field]=outData
+                                self.updateObservers(security=security, field=field, data=outData)
+                    except:
+                        #print 'Error with security '+security+' and field '+field
+                        self.updateObservers(security=security, field=field, data=pandas.np.nan)
+                    self.updateObservers(security=security, field='ALL', data=outDF)
+                    #print outDF
+            if event.eventType() == blpapi.event.Event.RESPONSE:
+                break
+
+    def register(self, observer):
+        if not observer in self.observers:
+            self.observers.append(observer)
+ 
+    def unregister(self, observer):
+        if observer in self.observers:
+            self.observers.remove(observer)
+ 
+    def unregisterAll(self):
+        if self.observers:
+            del self.observers[:]
+ 
+    def updateObservers(self, *args, **kwargs):
+        for observer in self.observers:
+            observer.update(*args, **kwargs)
+
+    def closeSession(self):
+        self.session.stop()
+
+
 class BLPStream(threading.Thread):
-    #The Subscription Paradigm
-    #The subscribed data will be sitting in self.output and update automatically
+    """The Subscription Paradigm
+    The subscribed data will be sitting in self.output and update automatically. Observers will be notified.
+    floatInterval is the minimum amount of time before updates - sometimes needs to be set at 0 for things to work properly
+    intCorrID is a user defined ID for the request
+    It is sometimes safer to ask for each data (for instance BID and ASK) in a separate stream.
+    Note that for corporate bonds, a change in the ASK price will still trigger a BID event.
+    """
 
     def __init__(self, strSecurityList=['ESM5 Index','VGM5 Index'], strDataList=['BID','ASK'], floatInterval=0, intCorrIDList=[0,1]):
-        #floatInterval is the minimum amount of time before updates - sometimes needs to be set at 0 for things to work properly
-        #intCorrID is a user defined ID for the request
         threading.Thread.__init__(self)
         self.session = blpapi.Session()
         self.session.start()
@@ -131,9 +259,10 @@ class BLPStream(threading.Thread):
     def handleDataEvent(self,event):
         output=blpapi.event.MessageIterator(event).next()
         self.lastUpdateTime=datetime.datetime.now()
+        #print output.toString()
         if output.hasElement("EVENT_TIME"):
             self.lastUpdateTimeBlmbrg=output.getElement("EVENT_TIME").toString()
-        for i in range(0,len(self.output.columns)):
+        for i in range(0,len(self.strDataList)):
             field=self.strDataList[i]
             if output.hasElement(field):
                 corrID=output.correlationIds()[0].value()
@@ -157,19 +286,9 @@ class Observer(object):
     def update(self, *args, **kwargs):
         pass
 
-class ObserverExample(Observer):
-    def update(self, *args, **kwargs):
-        output = kwargs['time'].strftime("%Y-%m-%d %H:%M:%S")+' received '+ kwargs['security'] + ' ' + kwargs['field'] + '=' + str(kwargs['data'])
-        output = output + '. CorrID '+str(kwargs['corrID']) + ' bbgTime ' + kwargs['bbgTime']
-        print output
 
-def streamPatternExample():
-    stream=BLPStream('ESM5 Index','BID',0,1)
-    obs=ObserverExample()
-    stream.register(obs)
-    stream.start()
-
-def main():
+#############################################################################
+def excelEmulationExample():
     ##Examples of the Request/Response Paradigm
     bloomberg=BLP()
     print bloomberg.bdp()
@@ -180,6 +299,24 @@ def main():
     print ''
     print bloomberg.bdhOHLC()
     bloomberg.closeSession()
+#############################################################################
+class ObserverExample(Observer):
+    def update(self, *args, **kwargs):
+        output = kwargs['time'].strftime("%Y-%m-%d %H:%M:%S")+' received '+ kwargs['security'] + ' ' + kwargs['field'] + '=' + str(kwargs['data'])
+        output = output + '. CorrID '+str(kwargs['corrID']) + ' bbgTime ' + kwargs['bbgTime']
+        print output
+
+def streamPatternExample():
+    stream=BLPStream('ESM5 Index',['BID','ASK'],0,1)
+    #stream=BLPStream('XS1151974877 CORP',['BID','ASK'],0,1) #Note that for a bond only BID gets updated even if ASK moves.
+    obs=ObserverExample()
+    stream.register(obs)
+    stream.start()
+#############################################################################
+
+
+def main():
+    pass
 
 if __name__ == '__main__':
     main()

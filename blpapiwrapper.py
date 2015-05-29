@@ -12,6 +12,15 @@ import pandas
 import threading
 from abc import ABCMeta, abstractmethod
 
+#This makes successive requests faster
+SECURITY_DATA = blpapi.Name("securityData")
+SECURITY = blpapi.Name("security")
+FIELD_DATA = blpapi.Name("fieldData")
+FIELD_EXCEPTIONS = blpapi.Name("fieldExceptions")
+FIELD_ID = blpapi.Name("fieldId")
+ERROR_INFO = blpapi.Name("errorInfo")
+
+
 class BLP():
     """Naive implementation of the Request/Response Paradigm closely matching the Excel API.
     Sharing one session for subsequent requests is faster, however it is not thread-safe, as some events can come faster than others.
@@ -38,7 +47,7 @@ class BLP():
             if event.eventType() == blpapi.event.Event.RESPONSE:
                 break
         try:
-            output = blpapi.event.MessageIterator(event).next().getElement('securityData').getValueAsElement(0).getElement('fieldData').getElementAsString(strData)
+            output = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getValueAsElement(0).getElement(FIELD_DATA).getElementAsString(strData)
             if output == '#N/A':
                 output = pandas.np.nan
         except:
@@ -61,7 +70,7 @@ class BLP():
             event = self.session.nextEvent()
             if event.eventType() == blpapi.event.Event.RESPONSE:
                 break
-        fieldDataArray = blpapi.event.MessageIterator(event).next().getElement('securityData').getElement('fieldData')
+        fieldDataArray = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getElement(FIELD_DATA)
         fieldDataList = [fieldDataArray.getValueAsElement(i) for i in range(0,fieldDataArray.numValues())]
         outDates = [x.getElementAsDatetime('date') for x in fieldDataList]
         output = pandas.DataFrame(index=outDates,columns=strData)
@@ -102,6 +111,10 @@ class BLPTS():
 
     def fillRequest(self, securities, fields, **kwargs):
         self.kwargs=kwargs
+        if type(securities)==str:
+            securities=[securities]
+        if type(fields)==str:
+            fields=[fields]
         if 'startDate' in kwargs:
             self.request = self.refDataSvc.createRequest('HistoricalDataRequest')
             self.startDate = kwargs['startDate']
@@ -115,14 +128,11 @@ class BLPTS():
             self.request.set('periodicitySelection', self.periodicity)
         else:
             self.request = self.refDataSvc.createRequest('ReferenceDataRequest')
+            self.output = pandas.DataFrame(index=securities,columns=fields)
             if 'strOverrideField' in kwargs:
                 o = self.request.getElement('overrides').appendElement()
                 o.setElement('fieldId',kwargs['strOverrideField'])
                 o.setElement('value',kwargs['strOverrideValue'])
-        if type(securities)==str:
-            securities=[securities]
-        if type(fields)==str:
-            fields=[fields]
         self.securities=securities
         self.fields=fields
         for s in securities:
@@ -137,13 +147,13 @@ class BLPTS():
         while True:
             event = self.session.nextEvent()
             if event.eventType() == blpapi.event.Event.RESPONSE or event.eventType() == blpapi.event.Event.PARTIAL_RESPONSE:
-                responseSize=blpapi.event.MessageIterator(event).next().getElement('securityData').numValues()
+                responseSize=blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).numValues()
                 for i in range(0,responseSize):
                     try:
                         if 'startDate' in self.kwargs:#HistoricalDataRequest
-                            output = blpapi.event.MessageIterator(event).next().getElement('securityData')
-                            security = output.getElement('security').getValueAsString()
-                            fieldDataArray = output.getElement('fieldData')
+                            output = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA)
+                            security = output.getElement(SECURITY).getValueAsString()
+                            fieldDataArray = output.getElement(FIELD_DATA)
                             fieldDataList = [fieldDataArray.getValueAsElement(i) for i in range(0,fieldDataArray.numValues())]
                             dates=map(lambda x:x.getElement('date').getValueAsString(),fieldDataList)
                             outDF=pandas.DataFrame(index=dates,columns=self.fields)
@@ -158,15 +168,16 @@ class BLPTS():
                                 outDF[field]=data
                                 self.updateObservers(security=security, field=field, data=outDF)
                         else:#ReferenceDataRequest
-                            output = blpapi.event.MessageIterator(event).next().getElement('securityData').getValueAsElement(i)
+                            output = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getValueAsElement(i)
                             outDF=pandas.Series(index=self.fields)
-                            for j in range(0,output.getElement('fieldData').numElements()):
-                                data=output.getElement('fieldData').getElement(j)
-                                security=output.getElement('security').getValueAsString()
+                            for j in range(0,output.getElement(FIELD_DATA).numElements()):
+                                data=output.getElement(FIELD_DATA).getElement(j)
+                                security=output.getElement(SECURITY).getValueAsString()
                                 field=str(data.name())
                                 outData=data.getValueAsString()
                                 outDF[field]=outData
                                 self.updateObservers(security=security, field=field, data=outData)
+                            self.output.loc[security]=outDF
                     except:
                         #print 'Error with security '+security+' and field '+field
                         self.updateObservers(security=security, field=field, data=pandas.np.nan)
@@ -272,6 +283,9 @@ class BLPStream(threading.Thread):
                 self.updateObservers(time=self.lastUpdateTime, security=security, field=field, corrID=corrID, data=data, bbgTime=self.lastUpdateTimeBlmbrg)
 
     def handleOtherEvent(self,event):
+        if event.eventType() == blpapi.event.Event.AUTHORIZATION_STATUS:
+            output=blpapi.event.MessageIterator(event).next()
+            output.toString()
         #print "Other event: event "+str(event.eventType())
         pass
 
@@ -300,7 +314,9 @@ def excelEmulationExample():
     print bloomberg.bdhOHLC()
     bloomberg.closeSession()
 #############################################################################
-class ObserverExample(Observer):
+
+
+class ObserverStreamExample(Observer):
     def update(self, *args, **kwargs):
         output = kwargs['time'].strftime("%Y-%m-%d %H:%M:%S")+' received '+ kwargs['security'] + ' ' + kwargs['field'] + '=' + str(kwargs['data'])
         output = output + '. CorrID '+str(kwargs['corrID']) + ' bbgTime ' + kwargs['bbgTime']
@@ -309,9 +325,23 @@ class ObserverExample(Observer):
 def streamPatternExample():
     stream=BLPStream('ESM5 Index',['BID','ASK'],0,1)
     #stream=BLPStream('XS1151974877 CORP',['BID','ASK'],0,1) #Note that for a bond only BID gets updated even if ASK moves.
-    obs=ObserverExample()
+    obs=ObserverStreamExample()
     stream.register(obs)
     stream.start()
+
+class ObserverRequestExample(Observer):
+    def update(self, *args, **kwargs):
+        if kwargs['field']=='ALL':
+            print kwargs['security']
+            print kwargs['data']
+
+def BLPTSExample():
+    result=BLPTS(['XS0316524130 Corp','US900123CG37 Corp'],['PX_BID','INT_ACC','DAYS_TO_NEXT_COUPON'])
+    result.get()
+    print result.output
+    result.closeSession()
+
+
 #############################################################################
 
 

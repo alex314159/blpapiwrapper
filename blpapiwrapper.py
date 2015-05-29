@@ -19,7 +19,8 @@ FIELD_DATA = blpapi.Name("fieldData")
 FIELD_EXCEPTIONS = blpapi.Name("fieldExceptions")
 FIELD_ID = blpapi.Name("fieldId")
 ERROR_INFO = blpapi.Name("errorInfo")
-
+DATE = blpapi.Name("date")
+EVENT_TIME = blpapi.Name("EVENT_TIME")
 
 class BLP():
     """Naive implementation of the Request/Response Paradigm closely matching the Excel API.
@@ -72,7 +73,7 @@ class BLP():
                 break
         fieldDataArray = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getElement(FIELD_DATA)
         fieldDataList = [fieldDataArray.getValueAsElement(i) for i in range(0,fieldDataArray.numValues())]
-        outDates = [x.getElementAsDatetime('date') for x in fieldDataList]
+        outDates = [x.getElementAsDatetime(DATE) for x in fieldDataList]
         output = pandas.DataFrame(index=outDates,columns=strData)
         for strD in strData:
             output[strD] = [x.getElementAsFloat(strD) for x in fieldDataList]
@@ -155,7 +156,7 @@ class BLPTS():
                             security = output.getElement(SECURITY).getValueAsString()
                             fieldDataArray = output.getElement(FIELD_DATA)
                             fieldDataList = [fieldDataArray.getValueAsElement(i) for i in range(0,fieldDataArray.numValues())]
-                            dates=map(lambda x:x.getElement('date').getValueAsString(),fieldDataList)
+                            dates=map(lambda x:x.getElement(DATE).getValueAsString(),fieldDataList)
                             outDF=pandas.DataFrame(index=dates,columns=self.fields)
                             outDF.index=outDF.index.to_datetime()
                             for field in self.fields:
@@ -271,8 +272,8 @@ class BLPStream(threading.Thread):
         output=blpapi.event.MessageIterator(event).next()
         self.lastUpdateTime=datetime.datetime.now()
         #print output.toString()
-        if output.hasElement("EVENT_TIME"):
-            self.lastUpdateTimeBlmbrg=output.getElement("EVENT_TIME").toString()
+        if output.hasElement(EVENT_TIME):
+            self.lastUpdateTimeBlmbrg=output.getElement(EVENT_TIME).toString()
         for i in range(0,len(self.strDataList)):
             field=self.strDataList[i]
             if output.hasElement(field):

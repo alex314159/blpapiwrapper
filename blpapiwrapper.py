@@ -45,7 +45,7 @@ class BLP():
             o.setElement('fieldId', strOverrideField)
             o.setElement('value', strOverrideValue)
 
-        # requestID = self.session.sendRequest(request)
+        requestID = self.session.sendRequest(request)
 
         while True:
             event = self.session.nextEvent()
@@ -73,7 +73,7 @@ class BLP():
         request.set('endDate', enddate.strftime('%Y%m%d'))
         request.set('adjustmentSplit', 'TRUE' if adjustmentSplit else 'FALSE')
         request.set('periodicitySelection', periodicity)
-        # requestID = self.session.sendRequest(request)
+        requestID = self.session.sendRequest(request)
 
         while True:
             event = self.session.nextEvent()
@@ -197,7 +197,9 @@ class BLPTS():
                                     data.append(pandas.np.nan)
 
                             outDF[field] = data
-                            self.updateObservers(security=security, field=field, data=outDF)
+                            self.updateObservers(security=security, field=field, data=outDF) # update one security one field
+
+                        self.updateObservers(security=security, field='ALL', data=outDF) # update one security all fields
 
                     else:
                         # ReferenceDataRequest
@@ -209,8 +211,10 @@ class BLPTS():
                             field    = str(data.name())
                             outData  = _dict_from_element(data)
 
-                            self.updateObservers(security=security, field=field, data=outData)
+                            self.updateObservers(security=security, field=field, data=outData) # update one security one field
                             self.output.loc[security, field] = outData
+                            
+                        self.updateObservers(security=security, field='ALL', data=self.output.loc[security]) # update one security all fields
 
             if event.eventType() == blpapi.event.Event.RESPONSE:
                 break
@@ -306,28 +310,34 @@ class BLPStream(threading.Thread):
     def handleDataEvent(self, event):
         output              = blpapi.event.MessageIterator(event).next()
         self.lastUpdateTime = datetime.datetime.now()
+        corrID              = output.correlationIds()[0].value()
+        security            = self.dictCorrID[corrID]
+        isParsed            = False
         #print output.toString()
 
         if output.hasElement(EVENT_TIME):
             self.lastUpdateTimeBlmbrg = output.getElement(EVENT_TIME).toString()
 
-        for i in range(0, len(self.strDataList)):
-            field = self.strDataList[i]
-
+        for field in self.strDataList:
             if output.hasElement(field):
-                corrID                           = output.correlationIds()[0].value()
-                security                         = self.dictCorrID[corrID]
+                isParsed                         = True
                 data                             = output.getElement(field).getValueAsFloat()
                 self.output.loc[security, field] = data
                 self.updateObservers(time=self.lastUpdateTime, security=security, field=field, corrID=corrID, data=data, bbgTime=self.lastUpdateTimeBlmbrg)
+         
+        # It can happen that you get an event without the data behind the event!
+        self.updateObservers(time=self.lastUpdateTime, security=security, field='ALL', corrID=corrID, data=0, bbgTime=self.lastUpdateTimeBlmbrg)
+        # if not isParsed:
+        #     print output.toString()
 
     def handleOtherEvent(self, event):
         if event.eventType() == blpapi.event.Event.AUTHORIZATION_STATUS:
             output = blpapi.event.MessageIterator(event).next()
             output.toString()
-        #print "Other event: event "+str(event.eventType())
+            print "Authorization event: event "+str(event.eventType())
+        else:
+            print "Other event: event "+str(event.eventType())
         pass
-
     def closeSubscription(self):
         self.session.unsubscribe(self.subscriptionList)
 

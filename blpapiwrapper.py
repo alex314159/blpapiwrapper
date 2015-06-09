@@ -298,14 +298,15 @@ class BLPStream(threading.Thread):
         for observer in self.observers:
             observer.update(*args, **kwargs)
 
-    def run(self):
+    def run(self, verbose=False):
         self.session.subscribe(self.subscriptionList)
         while True:
             event = self.session.nextEvent()
             if event.eventType() == blpapi.event.Event.SUBSCRIPTION_DATA:
                 self.handleDataEvent(event)
             else:
-                self.handleOtherEvent(event)
+                if verbose:
+                    self.handleOtherEvent(event)
 
     def handleDataEvent(self, event):
         output              = blpapi.event.MessageIterator(event).next()
@@ -331,13 +332,15 @@ class BLPStream(threading.Thread):
         #     print output.toString()
 
     def handleOtherEvent(self, event):
+        output = blpapi.event.MessageIterator(event).next()
+        msg = output.toString()
         if event.eventType() == blpapi.event.Event.AUTHORIZATION_STATUS:
-            output = blpapi.event.MessageIterator(event).next()
-            output.toString()
-            print "Authorization event: event "+str(event.eventType())
+            print "Authorization event: "+msg
+        elif event.eventType() == blpapi.event.Event.SUBSCRIPTION_STATUS:
+            print "Subscription status event: "+msg
         else:
             print "Other event: event "+str(event.eventType())
-        pass
+    
     def closeSubscription(self):
         self.session.unsubscribe(self.subscriptionList)
 

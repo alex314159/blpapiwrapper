@@ -27,6 +27,7 @@ class BLP():
     """Naive implementation of the Request/Response Paradigm closely matching the Excel API.
     Sharing one session for subsequent requests is faster, however it is not thread-safe, as some events can come faster than others.
     bdp returns a string, bdh returns a pandas DataFrame.
+    This is mostly useful for scripting, but care should be taken when used in a real world application.
     """
 
     def __init__(self):
@@ -107,11 +108,17 @@ class BLPTS():
     Override seems to only work when there's one security, one field, and one override.
     Examples:
     BLPTS(['ESA Index', 'VGA Index'], ['BID', 'ASK'])
-    BLPTSNew('US900123AL40 Govt','YLD_YTM_BID',strOverrideField='PX_BID',strOverrideValue='200')
-    BLPTSNew(['SPX Index','SX5E Index','EUR Curncy'],['PX_LAST','VOLUME'],startDate=datetime.datetime(2014,1,1),endDate=datetime.datetime(2015,5,14),periodicity='DAILY')
+    BLPTS('US900123AL40 Govt','YLD_YTM_BID',strOverrideField='PX_BID',strOverrideValue='200')
+    BLPTS(['SPX Index','SX5E Index','EUR Curncy'],['PX_LAST','VOLUME'],startDate=datetime.datetime(2014,1,1),endDate=datetime.datetime(2015,5,14),periodicity='DAILY')
     """
 
     def __init__(self, securities=[], fields=[], **kwargs):
+        """
+        Keyword arguments:
+        securities : list of ISINS 
+        fields : list of fields 
+        kwargs : startDate and endDate (datetime.datetime object, note: hours, minutes, seconds, and microseconds must be replaced by 0)
+        """
         self.session    = blpapi.Session()
         self.session.start()
         self.session.openService('//BLP/refdata')
@@ -124,6 +131,12 @@ class BLPTS():
             self.fillRequest(securities, fields, **kwargs)
 
     def fillRequest(self, securities, fields, **kwargs):
+        """
+        keyword arguments:
+        securities : list of ISINS
+        fields : list of fields 
+        kwargs : startDate and endDate (datetime.datetime object, note: hours, minutes, seconds, and microseconds must be replaced by 0)
+        """
         self.kwargs = kwargs
 
         if type(securities) == str:
@@ -165,6 +178,11 @@ class BLPTS():
             self.request.append('fields', f)
 
     def get(self, newSecurities=[], newFields=[], **kwargs):
+        """
+        securities : list of ISINS 
+        fields : list of fields 
+        kwargs : startDate and endDate (datetime.datetime object, note: hours, minutes, seconds, and microseconds must be replaced by 0)
+        """
 
         if len(newSecurities) > 0 or len(newFields) > 0:
             self.fillRequest(newSecurities, newFields, **kwargs)
@@ -321,8 +339,12 @@ class BLPStream(threading.Thread):
 
         for field in self.strDataList:
             if output.hasElement(field):
-                isParsed                         = True
-                data                             = output.getElement(field).getValueAsFloat()
+                isParsed = True
+                try:
+                    data = output.getElement(field).getValueAsFloat()
+                except:
+                    data = pandas.np.nan
+                    print 'error: ',security,field,output.getElement(field).getValueAsString()
                 self.output.loc[security, field] = data
                 self.updateObservers(time=self.lastUpdateTime, security=security, field=field, corrID=corrID, data=data, bbgTime=self.lastUpdateTimeBlmbrg)
          
@@ -335,12 +357,12 @@ class BLPStream(threading.Thread):
         output = blpapi.event.MessageIterator(event).next()
         msg = output.toString()
         if event.eventType() == blpapi.event.Event.AUTHORIZATION_STATUS:
-            print "Authorization event: "+msg
+            print "Authorization event: " + msg
         elif event.eventType() == blpapi.event.Event.SUBSCRIPTION_STATUS:
-            print "Subscription status event: "+msg
+            print "Subscription status event: " + msg
         else:
             print "Other event: event "+str(event.eventType())
-    
+
     def closeSubscription(self):
         self.session.unsubscribe(self.subscriptionList)
 
@@ -351,6 +373,22 @@ class Observer(object):
     @abstractmethod
     def update(self, *args, **kwargs):
         pass
+
+
+def SimpleReferenceDataRequest(id_to_ticker_dic, fields):
+    '''
+    Common use case for reference data request
+    id_to_ticker_dic: dictionnary with user id mapped to Bloomberg security ticker
+    Returns a dataframe indexed by the user id, with columns equal to fields
+    '''
+    ticker_to_id_dic =  {v: k for k, v in id_to_ticker_dic.items()}
+    blpts = BLPTS(id_to_ticker_dic.values(), fields)
+    blpts.get()
+    blpts.closeSession()
+    blpts.output['id'] = blpts.output.index
+    blpts.output['id'].replace(ticker_to_id_dic,inplace=True)
+    blpts.output.set_index('id', inplace=True)
+    return blpts.output.copy()
 
 
 #############################################################################

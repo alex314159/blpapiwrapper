@@ -1,7 +1,7 @@
 blpapiwrapper
 =============
 
-Simple Python wrapper around the Python Open Bloomberg API
+Simple Python wrapper for the Python Open Bloomberg API
 
 Requisites:
 * blpapi Python library (http://www.bloomberglabs.com/api/libraries/)

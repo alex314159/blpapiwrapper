@@ -1,7 +1,7 @@
 """
 Python wrapper to download data through the Bloomberg Open API
 Written by Alexandre Almosni
-(C) 2014-2015 Alexandre Almosni
+(C) 2014-2016 Alexandre Almosni
 Released under Apache 2.0 license. More info at http://www.apache.org/licenses/LICENSE-2.0
 """
 
@@ -22,7 +22,7 @@ FIELD_ID         = blpapi.Name("fieldId")
 SECURITY         = blpapi.Name("security")
 SECURITY_DATA    = blpapi.Name("securityData")
 
-
+################################################
 class BLP():
     """Naive implementation of the Request/Response Paradigm closely matching the Excel API.
     Sharing one session for subsequent requests is faster, however it is not thread-safe, as some events can come faster than others.
@@ -98,6 +98,7 @@ class BLP():
 
     def closeSession(self):
         self.session.stop()
+################################################
 
 
 class BLPTS():
@@ -255,6 +256,7 @@ class BLPTS():
 
     def closeSession(self):
         self.session.stop()
+################################################
 
 
 class BLPStream(threading.Thread):
@@ -365,6 +367,31 @@ class BLPStream(threading.Thread):
 
     def closeSubscription(self):
         self.session.unsubscribe(self.subscriptionList)
+################################################
+#Convenience functions below####################
+################################################
+
+
+def _dict_from_element(element):
+    '''
+    Used for e.g. dividends
+    '''
+    try:
+        return element.getValueAsString()
+    except:
+        if element.numValues() > 1:
+            results = []
+            for i in range(0, element.numValues()):
+                subelement    = element.getValue(i)
+                name          = str(subelement.name())
+                results.append(_dict_from_element(subelement))
+        else:
+            results = {}
+            for j in range(0, element.numElements()):
+                subelement    = element.getElement(j)
+                name          = str(subelement.name())
+                results[name] = _dict_from_element(subelement)
+        return results
 
 
 class Observer(object):
@@ -375,10 +402,20 @@ class Observer(object):
         pass
 
 
+class HistoryWatcher(Observer):
+    """Object to stream and record history data from Bloomberg.
+    """
+    def __init__(self):
+        self.outputDC={}
+    def update(self, *args, **kwargs):
+        if kwargs['field']!='ALL':
+            self.outputDC[(kwargs['security'],kwargs['field'])]=kwargs['data'][[kwargs['field']]]#double brackets keep it a dataframe, not a series
+
+
 def SimpleReferenceDataRequest(id_to_ticker_dic, fields):
     '''
     Common use case for reference data request
-    id_to_ticker_dic: dictionnary with user id mapped to Bloomberg security ticker
+    id_to_ticker_dic: dictionnary with user id mapped to Bloomberg security ticker e.g. {'Apple':'AAPL US Equity'}
     Returns a dataframe indexed by the user id, with columns equal to fields
     '''
     ticker_to_id_dic =  {v: k for k, v in id_to_ticker_dic.items()}
@@ -391,7 +428,29 @@ def SimpleReferenceDataRequest(id_to_ticker_dic, fields):
     return blpts.output.copy()
 
 
-#############################################################################
+def SimpleHistoryRequest(securities=[], fields=[], startDate=datetime.datetime(2015,1,1), endDate=datetime.datetime(2016,1,1), periodicity='DAILY'):
+    '''
+    Convenience function to retrieve historical data for a list of securities and fields
+    As returned data can have different length, missing data will be replaced with pandas.np.nan (note it's already taken care of in one security several fields)
+    If multiple securities and fields, a MultiIndex dataframe will be returned.
+    '''
+    blpts=BLPTS(securities, fields, startDate=startDate, endDate=endDate, periodicity=periodicity)
+    historyWatcher=HistoryWatcher()
+    blpts.register(historyWatcher)
+    blpts.get()
+    blpts.closeSession()
+    for key,df in historyWatcher.outputDC.iteritems():
+        df.columns=[key]
+    output=pandas.concat(historyWatcher.outputDC.values(),axis=1)
+    output.columns=pandas.MultiIndex.from_tuples(output.columns)
+    output.columns.names=['Security','Field']
+    return output
+
+
+################################################
+#Examples below#################################
+################################################
+
 def excelEmulationExample():
     ##Examples of the Request/Response Paradigm
     bloomberg = BLP()
@@ -403,7 +462,6 @@ def excelEmulationExample():
     print ''
     print bloomberg.bdhOHLC()
     bloomberg.closeSession()
-#############################################################################
 
 
 class ObserverStreamExample(Observer):
@@ -440,30 +498,6 @@ def BLPTSExample():
 
 def main():
     pass
-
-
-def _dict_from_element(element):
-    try:
-        return element.getValueAsString()
-
-    except:
-
-        if element.numValues() > 1:
-            results = []
-            for i in range(0, element.numValues()):
-                subelement    = element.getValue(i)
-                name          = str(subelement.name())
-                results.append(_dict_from_element(subelement))
-
-        else:
-            results = {}
-            for j in range(0, element.numElements()):
-                subelement    = element.getElement(j)
-                name          = str(subelement.name())
-                results[name] = _dict_from_element(subelement)
-
-        return results
-
 
 if __name__ == '__main__':
     main()

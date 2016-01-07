@@ -412,7 +412,7 @@ class HistoryWatcher(Observer):
             self.outputDC[(kwargs['security'],kwargs['field'])]=kwargs['data'][[kwargs['field']]]#double brackets keep it a dataframe, not a series
 
 
-def SimpleReferenceDataRequest(id_to_ticker_dic, fields):
+def simpleReferenceDataRequest(id_to_ticker_dic, fields):
     '''
     Common use case for reference data request
     id_to_ticker_dic: dictionnary with user id mapped to Bloomberg security ticker e.g. {'Apple':'AAPL US Equity'}
@@ -428,7 +428,7 @@ def SimpleReferenceDataRequest(id_to_ticker_dic, fields):
     return blpts.output.copy()
 
 
-def SimpleHistoryRequest(securities=[], fields=[], startDate=datetime.datetime(2015,1,1), endDate=datetime.datetime(2016,1,1), periodicity='DAILY'):
+def simpleHistoryRequest(securities=[], fields=[], startDate=datetime.datetime(2015,1,1), endDate=datetime.datetime(2016,1,1), periodicity='DAILY'):
     '''
     Convenience function to retrieve historical data for a list of securities and fields
     As returned data can have different length, missing data will be replaced with pandas.np.nan (note it's already taken care of in one security several fields)

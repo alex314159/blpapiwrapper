@@ -222,18 +222,20 @@ class BLPTS():
 
                     else:
                         # ReferenceDataRequest
-                        output  = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getValueAsElement(i)
-
-                        for j in range(0, output.getElement(FIELD_DATA).numElements()):
+                        output   = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getValueAsElement(i)
+                        n_elmts  = output.getElement(FIELD_DATA).numElements()
+                        security = output.getElement(SECURITY).getValueAsString()
+                        for j in range(0, n_elmts):
                             data     = output.getElement(FIELD_DATA).getElement(j)
-                            security = output.getElement(SECURITY).getValueAsString()
                             field    = str(data.name())
                             outData  = _dict_from_element(data)
-
                             self.updateObservers(security=security, field=field, data=outData) # update one security one field
                             self.output.loc[security, field] = outData
                             
-                        self.updateObservers(security=security, field='ALL', data=self.output.loc[security]) # update one security all fields
+                        if n_elmts>0:
+                            self.updateObservers(security=security, field='ALL', data=self.output.loc[security]) # update one security all fields
+                        else:
+                            print 'Empty response received for ' + security
 
             if event.eventType() == blpapi.event.Event.RESPONSE:
                 break
@@ -346,7 +348,7 @@ class BLPStream(threading.Thread):
                     data = output.getElement(field).getValueAsFloat()
                 except:
                     data = pandas.np.nan
-                    print 'error: ',security,field,output.getElement(field).getValueAsString()
+                    print 'error: ',security,field#,output.getElement(field).getValueAsString() # this can still error if field is there but is empty
                 self.output.loc[security, field] = data
                 self.updateObservers(time=self.lastUpdateTime, security=security, field=field, corrID=corrID, data=data, bbgTime=self.lastUpdateTimeBlmbrg)
          

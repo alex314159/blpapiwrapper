@@ -87,7 +87,14 @@ class BLP():
         output = pandas.DataFrame(index=outDates, columns=strData)
 
         for strD in strData:
-            output[strD] = [x.getElementAsFloat(strD) for x in fieldDataList]
+            listD = []
+            for x in fieldDataList:
+                try:
+                    listD.append(x.getElementAsFloat(strD))
+                except blpapi.exception.NotFoundException:
+                    # print('nan found for {}'.format(x.getElement('date')))
+                    listD.append(pandas.np.nan)
+            output[strD] = listD
 
         output.replace('#N/A History', pandas.np.nan, inplace=True)
         output.index = output.index.to_datetime()

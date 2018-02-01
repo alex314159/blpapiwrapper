@@ -441,7 +441,7 @@ def simpleHistoryRequest(securities=[], fields=[], startDate=datetime.datetime(2
     blpts.register(historyWatcher)
     blpts.get()
     blpts.closeSession()
-    for key,df in historyWatcher.outputDC.iteritems():
+    for key,df in historyWatcher.outputDC.items():
         df.columns=[key]
     output=pandas.concat(historyWatcher.outputDC.values(),axis=1)
     output.columns=pandas.MultiIndex.from_tuples(output.columns)

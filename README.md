@@ -4,7 +4,7 @@ blpapiwrapper
 Simple Python wrapper for the Python Open Bloomberg API
 
 Requisites:
-* blpapi Python library (http://www.bloomberglabs.com/api/libraries/)
+* blpapi Python library (https://www.bloomberg.com/professional/support/api-library/)
 * pandas library (http://pandas.pydata.org/)
 
 This wrapper allows simple use of the Bloomberg Python API. It only works if you're connected to Bloomberg, typically on a machine where the Bloomberg terminal application is running.

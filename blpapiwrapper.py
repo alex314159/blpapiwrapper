@@ -35,6 +35,8 @@ class BLP():
         self.session.start()
         self.session.openService('//BLP/refdata')
         self.refDataSvc = self.session.getService('//BLP/refdata')
+        self.session.openService("//blp/exrsvc")
+        self.refExrSvc = self.session.getService('//BLP/exrsvc')
 
     def bdp(self, strSecurity='US900123AL40 Govt', strData='PX_LAST', strOverrideField='', strOverrideValue=''):
         request = self.refDataSvc.createRequest('ReferenceDataRequest')
@@ -92,6 +94,23 @@ class BLP():
         output.replace('#N/A History', pandas.np.nan, inplace=True)
         output.index = pandas.to_datetime(output.index)
         return output
+
+    def bsrch(self, domain):
+        request = self.refExrSvc.createRequest('ExcelGetGridRequest')
+        request.set('Domain', domain)
+        requestID = self.session.sendRequest(request)
+
+        while True:
+            event = self.session.nextEvent()
+            if event.eventType() == blpapi.event.Event.RESPONSE:
+                break
+        data = []
+        for msg in event:
+            for v in msg.getElement("DataRecords").values():
+                for f in v.getElement("DataFields").values():
+                    data.append(f.getElementAsString("StringValue"))
+        
+        return pandas.DataFrame(data)
 
     def bdhOHLC(self, strSecurity='SPX Index', startdate=datetime.date(2014, 1, 1), enddate=datetime.date(2014, 1, 9), periodicity='DAILY'):
         return self.bdh(strSecurity, ['PX_OPEN', 'PX_HIGH', 'PX_LOW', 'PX_LAST'], startdate, enddate, periodicity)

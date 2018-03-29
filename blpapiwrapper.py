@@ -96,6 +96,10 @@ class BLP():
         return output
 
     def bsrch(self, domain):
+        '''
+        Used to retrieve results from SRCH function in terminal.
+        If you save a search called eg EX, calling bsrch("fi:EX") will return its results.
+        '''
         request = self.refExrSvc.createRequest('ExcelGetGridRequest')
         request.set('Domain', domain)
         requestID = self.session.sendRequest(request)

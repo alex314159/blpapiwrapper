@@ -17,3 +17,5 @@ There are three main components:
 For the Response/Request paradigm the bdp output comes as a string, the bdh output comes as pandas DataFrame. Check the main() function for examples.
 
 The Observer pattern is also implemented for the subscription paradigm.
+
+Tested on Python 2.7 32-bit and Python 3.6.5 64-bit.

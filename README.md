@@ -1,22 +1,21 @@
-# cljblpapiwrapper
+blpapiwrapper
+=============
 
-Simple Clojure wrapper around the Bloomberg Java API
+Simple Python wrapper for the Python Open Bloomberg API
 
-## Usage
+Requisites:
+* blpapi Python library (https://www.bloomberg.com/professional/support/api-library/)
+* pandas library (http://pandas.pydata.org/)
 
-This will only work if you're connected to Bloomberg, typically on a machine where the Bloomberg terminal application is running. The request/response paradigm is currently implemented. Please check the examples.
+This wrapper allows simple use of the Bloomberg Python API. It only works if you're connected to Bloomberg, typically on a machine where the Bloomberg terminal application is running.
 
-## License
+There are three main components:
+* a simple implementation that emulates the Excel API bdp and bdh functions, useful for scripting;
+* a thread-safe implementation of the Response/Request paradigm; and
+* a thread-safe implementation of the Subscription paradigm.
 
-Copyright © 2019 Alexandre Almosni
+For the Response/Request paradigm the bdp output comes as a string, the bdh output comes as pandas DataFrame. Check the main() function for examples.
 
-This program and the accompanying materials are made available under the
-terms of the Eclipse Public License 2.0 which is available at
-http://www.eclipse.org/legal/epl-2.0.
+The Observer pattern is also implemented for the subscription paradigm.
 
-This Source Code may also be made available under the following Secondary
-Licenses when the conditions for such availability set forth in the Eclipse
-Public License, v. 2.0 are satisfied: GNU General Public License as published by
-the Free Software Foundation, either version 2 of the License, or (at your
-option) any later version, with the GNU Classpath Exception which is available
-at https://www.gnu.org/software/classpath/license.html.
+Tested on Python 2.7 32-bit and Python 3.6.5 64-bit.

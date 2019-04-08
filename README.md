@@ -19,3 +19,5 @@ For the Response/Request paradigm the bdp output comes as a string, the bdh outp
 The Observer pattern is also implemented for the subscription paradigm.
 
 Tested on Python 2.7 32-bit and Python 3.6.5 64-bit.
+
+Note: blpapi installation issue on Windows 10 with Python 3.7: please check my answer on https://stackoverflow.com/questions/52897576/install-error-for-blpapi-in-python-for-bloomberg-api/54186235#54186235

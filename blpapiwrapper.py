@@ -1,7 +1,7 @@
 """
 Python wrapper to download data through the Bloomberg Open API
 Written by Alexandre Almosni   alexandre.almosni@gmail.com
-(C) 2014-2017 Alexandre Almosni
+(C) 2014-2019 Alexandre Almosni
 Released under Apache 2.0 license. More info at http://www.apache.org/licenses/LICENSE-2.0
 """
 
@@ -35,8 +35,6 @@ class BLP():
         self.session.start()
         self.session.openService('//BLP/refdata')
         self.refDataSvc = self.session.getService('//BLP/refdata')
-        self.session.openService("//blp/exrsvc")
-        self.refExrSvc = self.session.getService('//BLP/exrsvc')
 
     def bdp(self, strSecurity='US900123AL40 Govt', strData='PX_LAST', strOverrideField='', strOverrideValue=''):
         request = self.refDataSvc.createRequest('ReferenceDataRequest')
@@ -95,27 +93,6 @@ class BLP():
         output.index = pandas.to_datetime(output.index)
         return output
 
-    def bsrch(self, domain):
-        '''
-        Used to retrieve results from SRCH function in terminal.
-        If you save a search called eg EX, calling bsrch("fi:EX") will return its results.
-        '''
-        request = self.refExrSvc.createRequest('ExcelGetGridRequest')
-        request.set('Domain', domain)
-        requestID = self.session.sendRequest(request)
-
-        while True:
-            event = self.session.nextEvent()
-            if event.eventType() == blpapi.event.Event.RESPONSE:
-                break
-        data = []
-        for msg in event:
-            for v in msg.getElement("DataRecords").values():
-                for f in v.getElement("DataFields").values():
-                    data.append(f.getElementAsString("StringValue"))
-        
-        return pandas.DataFrame(data)
-
     def bdhOHLC(self, strSecurity='SPX Index', startdate=datetime.date(2014, 1, 1), enddate=datetime.date(2014, 1, 9), periodicity='DAILY'):
         return self.bdh(strSecurity, ['PX_OPEN', 'PX_HIGH', 'PX_LOW', 'PX_LAST'], startdate, enddate, periodicity)
 
@@ -134,6 +111,10 @@ class BLPTS():
     BLPTS(['ESA Index', 'VGA Index'], ['BID', 'ASK'])
     BLPTS('US900123AL40 Govt','YLD_YTM_BID',strOverrideField='PX_BID',strOverrideValue='200')
     BLPTS(['SPX Index','SX5E Index','EUR Curncy'],['PX_LAST','VOLUME'],startDate=datetime.datetime(2014,1,1),endDate=datetime.datetime(2015,5,14),periodicity='DAILY')
+    BLPTS('AAPL US Equity','SALES_REV_TURN', startDate='CY2010', endDate='CY2018', periodicity='YEARLY')
+    BLPTS('AAPL US Equity','SALES_REV_TURN', startDate='CY2010', endDate='CY2018', periodicity='YEARLY')
+    BLPTS('3333 HK Equity','SALES_REV_TURN', startDate='CY2010', endDate='CY2018', periodicity='YEARLY', strOverrideField='EQY_FUND_CRNCY', strOverrideValue='USD')
+    There seems to be a limit to number of fields we can ask at the same time - less than 20
     """
 
     def __init__(self, securities=[], fields=[], **kwargs):
@@ -149,7 +130,6 @@ class BLPTS():
         self.refDataSvc = self.session.getService('//BLP/refdata')
         self.observers  = []
         self.kwargs     = kwargs
-
         if len(securities) > 0 and len(fields) > 0:
             # also works if securities and fields are a string
             self.fillRequest(securities, fields, **kwargs)
@@ -173,24 +153,31 @@ class BLPTS():
             self.request   = self.refDataSvc.createRequest('HistoricalDataRequest')
             self.startDate = kwargs['startDate']
             self.endDate   = kwargs['endDate']
-
-            if 'periodicity' in kwargs:
-                self.periodicity = kwargs['periodicity']
-            else:
-                self.periodicity = 'DAILY'
-
-            self.request.set('startDate', self.startDate.strftime('%Y%m%d'))
-            self.request.set('endDate', self.endDate.strftime('%Y%m%d'))
+            self.periodicity = kwargs['periodicity'] if 'periodicity' in kwargs else 'DAILY'
             self.request.set('periodicitySelection', self.periodicity)
+            # if 'periodicity' in kwargs:
+            #     self.periodicity = kwargs['periodicity']
+            # else:
+            #     self.periodicity = 'DAILY'
+
+            if type(self.startDate) == str:
+                self.request.set('startDate', self.startDate)
+            else:
+                self.request.set('startDate', self.startDate.strftime('%Y%m%d'))
+
+            if type(self.endDate) == str:
+                self.request.set('endDate', self.endDate)
+            else:
+                self.request.set('endDate', self.endDate.strftime('%Y%m%d'))
 
         else:
             self.request = self.refDataSvc.createRequest('ReferenceDataRequest')
             self.output  = pandas.DataFrame(index=securities, columns=fields)
 
-            if 'strOverrideField' in kwargs:
-                o = self.request.getElement('overrides').appendElement()
-                o.setElement('fieldId', kwargs['strOverrideField'])
-                o.setElement('value', kwargs['strOverrideValue'])
+        if 'strOverrideField' in kwargs:
+            o = self.request.getElement('overrides').appendElement()
+            o.setElement('fieldId', kwargs['strOverrideField'])
+            o.setElement('value', kwargs['strOverrideValue'])
 
         self.securities = securities
         self.fields     = fields
@@ -453,22 +440,23 @@ def simpleReferenceDataRequest(id_to_ticker_dic, fields):
     return blpts.output.copy()
 
 
-def simpleHistoryRequest(securities=[], fields=[], startDate=datetime.datetime(2015,1,1), endDate=datetime.datetime(2016,1,1), periodicity='DAILY'):
+def simpleHistoryRequest(securities=[], fields=[], startDate=datetime.datetime(2015,1,1), endDate=datetime.datetime(2016,1,1), **kwargs):
     '''
     Convenience function to retrieve historical data for a list of securities and fields
     As returned data can have different length, missing data will be replaced with pandas.np.nan (note it's already taken care of in one security several fields)
     If multiple securities and fields, a MultiIndex dataframe will be returned.
     '''
-    blpts=BLPTS(securities, fields, startDate=startDate, endDate=endDate, periodicity=periodicity)
-    historyWatcher=HistoryWatcher()
+    blpts = BLPTS(securities, fields, startDate=startDate, endDate=endDate, **kwargs)
+    historyWatcher = HistoryWatcher()
     blpts.register(historyWatcher)
     blpts.get()
     blpts.closeSession()
-    for key,df in historyWatcher.outputDC.items():
-        df.columns=[key]
-    output=pandas.concat(historyWatcher.outputDC.values(),axis=1)
-    output.columns=pandas.MultiIndex.from_tuples(output.columns)
-    output.columns.names=['Security','Field']
+    #for key,df in historyWatcher.outputDC.iteritems():
+    for key, df in historyWatcher.outputDC.items():
+        df.columns = [key]
+    output = pandas.concat(historyWatcher.outputDC.values(), axis=1)
+    output.columns = pandas.MultiIndex.from_tuples(output.columns)
+    output.columns.names = ['Security', 'Field']
     return output
 
 

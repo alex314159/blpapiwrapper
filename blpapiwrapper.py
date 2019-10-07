@@ -23,16 +23,58 @@ SECURITY         = blpapi.Name("security")
 SECURITY_DATA    = blpapi.Name("securityData")
 
 ################################################
-class BLP():
+
+class BLPSession(blpapi.Session):
+    """This class is just a wrapper around the blpapi.Session object to allow for SAPI authentication if needed.
+    host_ip: server IP
+    host_port: server port
+    uuid: the user who's authenticating - determines market data permissions
+    local_ip: the ip of the uuid user"""
+    def __init__(self, host_ip=None, host_port=None, uuid=None, local_ip=None):
+        if host_ip is not None:
+            host_port = int(host_port)  # needs to be an int
+            uuid = int(uuid)  # needs to be an int
+            opt = blpapi.SessionOptions()
+            opt.setClientMode(2)
+            opt.setServerHost(host_ip)
+            opt.setServerPort(host_port)
+            blpapi.Session.__init__(self, opt)
+            self.start()
+            identity = self.createIdentity()
+            self.openService('//blp/apiauth')
+            apiAuthSvc = self.getService('//blp/apiauth')
+            auth_req = apiAuthSvc.createAuthorizationRequest()
+            auth_req.set('uuid', uuid)
+            auth_req.set('ipAddress', local_ip)
+            corr = blpapi.CorrelationId(uuid)
+            self.sendAuthorizationRequest(auth_req, identity, corr)
+            while True:
+                event = self.nextEvent()
+                if event.eventType() == blpapi.event.Event.RESPONSE:
+                    break
+            msg_iter = blpapi.event.MessageIterator(event)
+            if msg_iter.next().toString()[0:20] == 'AuthorizationSuccess':
+                print(str(uuid) + ' authorized and connected.')
+            else:
+                print(str(uuid) + ' failed to connect.')
+        else:
+            blpapi.Session.__init__(self)
+            self.start()
+
+
+class BLP:
     """Naive implementation of the Request/Response Paradigm closely matching the Excel API.
     Sharing one session for subsequent requests is faster, however it is not thread-safe, as some events can come faster than others.
     bdp returns a string, bdh returns a pandas DataFrame.
     This is mostly useful for scripting, but care should be taken when used in a real world application.
+    Desktop users should not need to use sapi_dic.
     """
 
-    def __init__(self):
-        self.session = blpapi.Session()
-        self.session.start()
+    def __init__(self, sapi_dic=None):
+        if sapi_dic is not None:
+            self.session = BLPSession(sapi_dic['host_ip'], sapi_dic['host_port'], sapi_dic['uuid'], sapi_dic['local_ip'])
+        else:
+            self.session = BLPSession()
         self.session.openService('//BLP/refdata')
         self.refDataSvc = self.session.getService('//BLP/refdata')
 
@@ -101,7 +143,7 @@ class BLP():
 ################################################
 
 
-class BLPTS():
+class BLPTS:
     """Thread-safe implementation of the Request/Response Paradigm.
     The functions don't return anything but notify observers of results.
     Including startDate as a keyword argument will define a HistoricalDataRequest, otherwise it will be a ReferenceDataRequest.
@@ -115,6 +157,7 @@ class BLPTS():
     BLPTS('AAPL US Equity','SALES_REV_TURN', startDate='CY2010', endDate='CY2018', periodicity='YEARLY')
     BLPTS('3333 HK Equity','SALES_REV_TURN', startDate='CY2010', endDate='CY2018', periodicity='YEARLY', strOverrideField='EQY_FUND_CRNCY', strOverrideValue='USD')
     There seems to be a limit to number of fields we can ask at the same time - less than 20
+    sapi_dic is used for the SAPI connection
     """
 
     def __init__(self, securities=[], fields=[], **kwargs):
@@ -122,14 +165,16 @@ class BLPTS():
         Keyword arguments:
         securities : list of ISINS 
         fields : list of fields 
-        kwargs : startDate and endDate (datetime.datetime object, note: hours, minutes, seconds, and microseconds must be replaced by 0)
+        kwargs : startDate and endDate (datetime.datetime object, note: hours, minutes, seconds, and microseconds must be replaced by 0), periodicity, sapi_dic, etc.
         """
-        self.session    = blpapi.Session()
-        self.session.start()
+        self.kwargs = kwargs
+        if 'sapi_dic' in self.kwargs and self.kwargs['sapi_dic'] is not None:
+            self.session = BLPSession(kwargs['sapi_dic']['host_ip'], kwargs['sapi_dic']['host_port'], kwargs['sapi_dic']['uuid'], kwargs['sapi_dic']['local_ip'])
+        else:
+            self.session = BLPSession()
         self.session.openService('//BLP/refdata')
         self.refDataSvc = self.session.getService('//BLP/refdata')
-        self.observers  = []
-        self.kwargs     = kwargs
+        self.observers = []
         if len(securities) > 0 and len(fields) > 0:
             # also works if securities and fields are a string
             self.fillRequest(securities, fields, **kwargs)
@@ -280,10 +325,12 @@ class BLPStream(threading.Thread):
     Note that for corporate bonds, a change in the ASK price will still trigger a BID event.
     """
 
-    def __init__(self, strSecurityList=['ESM5 Index', 'VGM5 Index'], strDataList=['BID', 'ASK'], floatInterval=0, intCorrIDList=[0, 1]):
+    def __init__(self, strSecurityList=['ESZ9 Index', 'VGZ9 Index'], strDataList=['BID', 'ASK'], floatInterval=0, intCorrIDList=[0, 1], sapi_dic=None):
         threading.Thread.__init__(self)
-        self.session = blpapi.Session()
-        self.session.start()
+        if sapi_dic is not None:
+            self.session = BLPSession(BLPSession(sapi_dic['host_ip'], sapi_dic['host_port'], sapi_dic['uuid'], sapi_dic['local_ip']))
+        else:
+            self.session = BLPSession()
         self.session.openService("//BLP/mktdata")
 
         if type(strSecurityList) == str:
@@ -424,14 +471,14 @@ class HistoryWatcher(Observer):
             self.outputDC[(kwargs['security'],kwargs['field'])]=kwargs['data'][[kwargs['field']]]#double brackets keep it a dataframe, not a series
 
 
-def simpleReferenceDataRequest(id_to_ticker_dic, fields):
+def simpleReferenceDataRequest(id_to_ticker_dic, fields, sapi_dic=None):
     '''
     Common use case for reference data request
     id_to_ticker_dic: dictionnary with user id mapped to Bloomberg security ticker e.g. {'Apple':'AAPL US Equity'}
     Returns a dataframe indexed by the user id, with columns equal to fields
     '''
     ticker_to_id_dic =  {v: k for k, v in id_to_ticker_dic.items()}
-    blpts = BLPTS(id_to_ticker_dic.values(), fields)
+    blpts = BLPTS(id_to_ticker_dic.values(), fields, sapi_dic=sapi_dic)
     blpts.get()
     blpts.closeSession()
     blpts.output['id'] = blpts.output.index

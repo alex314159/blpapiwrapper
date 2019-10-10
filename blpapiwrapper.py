@@ -24,12 +24,13 @@ SECURITY_DATA    = blpapi.Name("securityData")
 
 ################################################
 
+
 class BLPSession(blpapi.Session):
     """This class is just a wrapper around the blpapi.Session object to allow for SAPI authentication if needed.
     host_ip: server IP
     host_port: server port
     uuid: the user who's authenticating - determines market data permissions
-    local_ip: the ip of the uuid user"""
+    local_ip: the ip of the uuid user - has to be the latest machine the user logged in from"""
     def __init__(self, host_ip=None, host_port=None, uuid=None, local_ip=None):
         if host_ip is not None:
             host_port = int(host_port)  # needs to be an int
@@ -53,14 +54,16 @@ class BLPSession(blpapi.Session):
                 if event.eventType() == blpapi.event.Event.RESPONSE:
                     break
             msg_iter = blpapi.event.MessageIterator(event)
-            if msg_iter.next().toString()[0:20] == 'AuthorizationSuccess':
+            auth_msg = msg_iter.next().toString()[0:20]
+            if auth_msg == 'AuthorizationSuccess':
                 print(str(uuid) + ' authorized and connected.')
+                self.auth_success = True
             else:
                 print(str(uuid) + ' failed to connect.')
+                self.auth_success = False
         else:
             blpapi.Session.__init__(self)
             self.start()
-
 
 class BLP:
     """Naive implementation of the Request/Response Paradigm closely matching the Excel API.

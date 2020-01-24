@@ -106,7 +106,8 @@ class BLP:
             output = pandas.np.nan
         return output
 
-    def bdh(self, strSecurity='SPX Index', strData='PX_LAST', startdate=datetime.date(2014, 1, 1), enddate=datetime.date(2014, 1, 9), adjustmentSplit=False, periodicity='DAILY'):
+    def bdh(self, strSecurity='SPX Index', strData='PX_LAST', startdate=datetime.date(2014, 1, 1), enddate=datetime.date(2014, 1, 9), 
+            adjustmentSplit=False, periodicity='DAILY', strOverrideField='', strOverrideValue=''):
         request = self.refDataSvc.createRequest('HistoricalDataRequest')
         request.append('securities', strSecurity)
         if type(strData) == str:
@@ -114,6 +115,11 @@ class BLP:
 
         for strD in strData:
             request.append('fields', strD)
+        
+        if strOverrideField != '':
+            o = request.getElement('overrides').appendElement()
+            o.setElement('fieldId', strOverrideField)
+            o.setElement('value', strOverrideValue)
 
         request.set('startDate', startdate.strftime('%Y%m%d'))
         request.set('endDate', enddate.strftime('%Y%m%d'))

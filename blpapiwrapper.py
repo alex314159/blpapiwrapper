@@ -1,7 +1,7 @@
 """
 Python wrapper to download data through the Bloomberg Open API
 Written by Alexandre Almosni   alexandre.almosni@gmail.com
-(C) 2014-2019 Alexandre Almosni
+(C) 2014-2020 Alexandre Almosni
 Released under Apache 2.0 license. More info at http://www.apache.org/licenses/LICENSE-2.0
 """
 
@@ -11,6 +11,7 @@ import blpapi
 import datetime
 import pandas
 import threading
+from numpy import nan
 
 #This makes successive requests faster
 DATE             = blpapi.Name("date")
@@ -23,7 +24,6 @@ SECURITY         = blpapi.Name("security")
 SECURITY_DATA    = blpapi.Name("securityData")
 
 ################################################
-
 
 class BLPSession(blpapi.Session):
     """This class is just a wrapper around the blpapi.Session object to allow for SAPI authentication if needed.
@@ -65,6 +65,7 @@ class BLPSession(blpapi.Session):
             blpapi.Session.__init__(self)
             self.start()
 
+
 class BLP:
     """Naive implementation of the Request/Response Paradigm closely matching the Excel API.
     Sharing one session for subsequent requests is faster, however it is not thread-safe, as some events can come faster than others.
@@ -100,14 +101,13 @@ class BLP:
         try:
             output = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getValueAsElement(0).getElement(FIELD_DATA).getElementAsString(strData)
             if output == '#N/A':
-                output = pandas.np.nan
+                output = nan
         except:
             print('error with '+strSecurity+' '+strData)
-            output = pandas.np.nan
+            output = nan
         return output
 
-    def bdh(self, strSecurity='SPX Index', strData='PX_LAST', startdate=datetime.date(2014, 1, 1), enddate=datetime.date(2014, 1, 9), 
-            adjustmentSplit=False, periodicity='DAILY', strOverrideField='', strOverrideValue=''):
+    def bdh(self, strSecurity='SPX Index', strData='PX_LAST', startdate=datetime.date(2014, 1, 1), enddate=datetime.date(2014, 1, 9), adjustmentSplit=False, periodicity='DAILY', strOverrideField='', strOverrideValue=''):
         request = self.refDataSvc.createRequest('HistoricalDataRequest')
         request.append('securities', strSecurity)
         if type(strData) == str:
@@ -115,7 +115,7 @@ class BLP:
 
         for strD in strData:
             request.append('fields', strD)
-        
+
         if strOverrideField != '':
             o = request.getElement('overrides').appendElement()
             o.setElement('fieldId', strOverrideField)
@@ -140,7 +140,7 @@ class BLP:
         for strD in strData:
             output[strD] = [x.getElementAsFloat(strD) for x in fieldDataList]
 
-        output.replace('#N/A History', pandas.np.nan, inplace=True)
+        output.replace('#N/A History', nan, inplace=True)
         output.index = pandas.to_datetime(output.index)
         return output
 
@@ -277,7 +277,7 @@ class BLPTS:
                                 if row.hasElement(field):
                                     data.append(row.getElement(field).getValueAsFloat())
                                 else:
-                                    data.append(pandas.np.nan)
+                                    data.append(nan)
 
                             outDF[field] = data
                             self.updateObservers(security=security, field=field, data=outDF) # update one security one field
@@ -413,7 +413,7 @@ class BLPStream(threading.Thread):
                 try:
                     data = output.getElement(field).getValueAsFloat()
                 except:
-                    data = pandas.np.nan
+                    data = nan
                     print('error: ',security,field)#,output.getElement(field).getValueAsString() # this can still error if field is there but is empty
                 self.output.loc[security, field] = data
                 self.updateObservers(time=self.lastUpdateTime, security=security, field=field, corrID=corrID, data=data, bbgTime=self.lastUpdateTimeBlmbrg)
@@ -499,7 +499,7 @@ def simpleReferenceDataRequest(id_to_ticker_dic, fields, sapi_dic=None):
 def simpleHistoryRequest(securities=[], fields=[], startDate=datetime.datetime(2015,1,1), endDate=datetime.datetime(2016,1,1), **kwargs):
     '''
     Convenience function to retrieve historical data for a list of securities and fields
-    As returned data can have different length, missing data will be replaced with pandas.np.nan (note it's already taken care of in one security several fields)
+    As returned data can have different length, missing data will be replaced with nan (note it's already taken care of in one security several fields)
     If multiple securities and fields, a MultiIndex dataframe will be returned.
     '''
     blpts = BLPTS(securities, fields, startDate=startDate, endDate=endDate, **kwargs)
@@ -541,7 +541,7 @@ class ObserverStreamExample(Observer):
 
 
 def streamPatternExample():
-    stream = BLPStream('ESZ7 Index', ['BID', 'ASK'], 0, 1)
+    stream = BLPStream('ESU1 Index', ['BID', 'ASK'], 0, 1)
     #stream=BLPStream('XS1151974877 CORP',['BID','ASK'],0,1) #Note that for a bond only BID gets updated even if ASK moves.
     obs = ObserverStreamExample()
     stream.register(obs)

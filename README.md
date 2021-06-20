@@ -7,7 +7,9 @@ Requisites:
 * blpapi Python library (https://www.bloomberg.com/professional/support/api-library/)
 * pandas library (http://pandas.pydata.org/)
 
-This wrapper allows simple use of the Bloomberg Python API. It only works if you're connected to Bloomberg, typically on a machine where the Bloomberg terminal application is running.
+This wrapper allows simple use of the Bloomberg Python API, both terminal based and server based (SAPI):
+* the terminal version only works if you're connected to Bloomberg, typically on a machine where the Bloomberg terminal application is running and you are logged in;
+* the SAPI version needs a Bloomberg SAPI license as well as the details of any user that is logged into the terminal at the time of the request.
 
 There are three main components:
 * a simple implementation that emulates the Excel API bdp and bdh functions, useful for scripting;

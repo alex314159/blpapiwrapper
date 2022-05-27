@@ -145,7 +145,7 @@ class BLP:
         return output
 
     def bdhOHLC(self, strSecurity='SPX Index', startdate=datetime.date(2014, 1, 1), enddate=datetime.date(2014, 1, 9), periodicity='DAILY'):
-        return self.bdh(strSecurity, ['PX_OPEN', 'PX_HIGH', 'PX_LOW', 'PX_LAST'], startdate, enddate, periodicity)
+        return self.bdh(strSecurity, ['PX_OPEN', 'PX_HIGH', 'PX_LOW', 'PX_LAST'], startdate, enddate, False, periodicity)
 
     def closeSession(self):
         self.session.stop()
@@ -269,7 +269,7 @@ class BLPTS:
                         fieldDataList  = [fieldDataArray.getValueAsElement(i) for i in range(0, fieldDataArray.numValues())]
                         dates          = map(lambda x: x.getElement(DATE).getValueAsString(), fieldDataList)
                         outDF          = pandas.DataFrame(index=dates, columns=self.fields)
-                        outDF.index    = pandas.to_datetime(outDF.index)
+                        outDF.index    = pandas.to_datetime(outDF.index, format='%Y-%m-%d%z')
 
                         for field in self.fields:
                             data = []
@@ -296,7 +296,7 @@ class BLPTS:
                             self.updateObservers(security=security, field=field, data=outData) # update one security one field
                             self.output.loc[security, field] = outData
                             
-                        if n_elmts>0:
+                        if n_elmts > 0:
                             self.updateObservers(security=security, field='ALL', data=self.output.loc[security]) # update one security all fields
                         else:
                             print('Empty response received for ' + security)
@@ -334,7 +334,7 @@ class BLPStream(threading.Thread):
     Note that for corporate bonds, a change in the ASK price will still trigger a BID event.
     """
 
-    def __init__(self, strSecurityList=['ESZ9 Index', 'VGZ9 Index'], strDataList=['BID', 'ASK'], floatInterval=0, intCorrIDList=[0, 1], sapi_dic=None):
+    def __init__(self, strSecurityList=['ESU2 Index', 'VGU2 Index'], strDataList=['BID', 'ASK'], floatInterval=0, intCorrIDList=[0, 1], sapi_dic=None):
         threading.Thread.__init__(self)
         if sapi_dic is not None:
             self.session = BLPSession(BLPSession(sapi_dic['host_ip'], sapi_dic['host_port'], sapi_dic['uuid'], sapi_dic['local_ip']))
@@ -474,10 +474,11 @@ class HistoryWatcher(Observer):
     """Object to stream and record history data from Bloomberg.
     """
     def __init__(self):
-        self.outputDC={}
+        self.outputDC = {}
+
     def update(self, *args, **kwargs):
-        if kwargs['field']!='ALL':
-            self.outputDC[(kwargs['security'],kwargs['field'])]=kwargs['data'][[kwargs['field']]]#double brackets keep it a dataframe, not a series
+        if kwargs['field'] != 'ALL':
+            self.outputDC[(kwargs['security'], kwargs['field'])]=kwargs['data'][[kwargs['field']]]#double brackets keep it a dataframe, not a series
 
 
 def simpleReferenceDataRequest(id_to_ticker_dic, fields, sapi_dic=None):
@@ -541,7 +542,7 @@ class ObserverStreamExample(Observer):
 
 
 def streamPatternExample():
-    stream = BLPStream('ESU1 Index', ['BID', 'ASK'], 0, 1)
+    stream = BLPStream('ESU2 Index', ['BID', 'ASK'], 0, 1)
     #stream=BLPStream('XS1151974877 CORP',['BID','ASK'],0,1) #Note that for a bond only BID gets updated even if ASK moves.
     obs = ObserverStreamExample()
     stream.register(obs)

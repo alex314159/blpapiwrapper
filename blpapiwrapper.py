@@ -1,7 +1,7 @@
 """
 Python wrapper to download data through the Bloomberg Open API
 Written by Alexandre Almosni   alexandre.almosni@gmail.com
-(C) 2014-2020 Alexandre Almosni
+(C) 2014-2022 Alexandre Almosni
 Released under Apache 2.0 license. More info at http://www.apache.org/licenses/LICENSE-2.0
 """
 
@@ -23,7 +23,9 @@ FIELD_ID         = blpapi.Name("fieldId")
 SECURITY         = blpapi.Name("security")
 SECURITY_DATA    = blpapi.Name("securityData")
 
+BLPAPI_VERSION = float(blpapi.version()[0:4]) # the MessageIterator next() method became hidden starting in blpapi 3.18
 ################################################
+
 
 class BLPSession(blpapi.Session):
     """This class is just a wrapper around the blpapi.Session object to allow for SAPI authentication if needed.
@@ -54,7 +56,7 @@ class BLPSession(blpapi.Session):
                 if event.eventType() == blpapi.event.Event.RESPONSE:
                     break
             msg_iter = blpapi.event.MessageIterator(event)
-            auth_msg = msg_iter.next().toString()[0:20]
+            auth_msg = msg_iter.__next__().toString()[0:20] if BLPAPI_VERSION > 3.17 else msg_iter.next().toString()[0:20]
             if auth_msg == 'AuthorizationSuccess':
                 print(str(uuid) + ' authorized and connected.')
                 self.auth_success = True
@@ -99,7 +101,7 @@ class BLP:
             if event.eventType() == blpapi.event.Event.RESPONSE:
                 break
         try:
-            output = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getValueAsElement(0).getElement(FIELD_DATA).getElementAsString(strData)
+            output = blpapi.event.MessageIterator(event).__next__().getElement(SECURITY_DATA).getValueAsElement(0).getElement(FIELD_DATA).getElementAsString(strData) if BLPAPI_VERSION > 3.17 else blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getValueAsElement(0).getElement(FIELD_DATA).getElementAsString(strData)
             if output == '#N/A':
                 output = nan
         except:
@@ -132,7 +134,7 @@ class BLP:
             if event.eventType() == blpapi.event.Event.RESPONSE:
                 break
 
-        fieldDataArray = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getElement(FIELD_DATA)
+        fieldDataArray = blpapi.event.MessageIterator(event).__next__().getElement(SECURITY_DATA).getElement(FIELD_DATA) if BLPAPI_VERSION > 3.17 else blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getElement(FIELD_DATA)
         fieldDataList = [fieldDataArray.getValueAsElement(i) for i in range(0, fieldDataArray.numValues())]
         outDates = [x.getElementAsDatetime(DATE) for x in fieldDataList]
         output = pandas.DataFrame(index=outDates, columns=strData)
@@ -172,8 +174,8 @@ class BLPTS:
     def __init__(self, securities=[], fields=[], **kwargs):
         """
         Keyword arguments:
-        securities : list of ISINS 
-        fields : list of fields 
+        securities : list of ISINS
+        fields : list of fields
         kwargs : startDate and endDate (datetime.datetime object, note: hours, minutes, seconds, and microseconds must be replaced by 0), periodicity, sapi_dic, etc.
         """
         self.kwargs = kwargs
@@ -192,7 +194,7 @@ class BLPTS:
         """
         keyword arguments:
         securities : list of ISINS
-        fields : list of fields 
+        fields : list of fields
         kwargs : startDate and endDate (datetime.datetime object, note: hours, minutes, seconds, and microseconds must be replaced by 0)
         """
         self.kwargs = kwargs
@@ -244,8 +246,8 @@ class BLPTS:
 
     def get(self, newSecurities=[], newFields=[], **kwargs):
         """
-        securities : list of ISINS 
-        fields : list of fields 
+        securities : list of ISINS
+        fields : list of fields
         kwargs : startDate and endDate (datetime.datetime object, note: hours, minutes, seconds, and microseconds must be replaced by 0)
         """
 
@@ -257,19 +259,22 @@ class BLPTS:
         while True:
             event = self.session.nextEvent()
             if event.eventType() in [blpapi.event.Event.RESPONSE, blpapi.event.Event.PARTIAL_RESPONSE]:
-                responseSize = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).numValues()
+                responseSize = blpapi.event.MessageIterator(event).__next__().getElement(SECURITY_DATA).numValues() if BLPAPI_VERSION > 3.17 else blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).numValues()
 
                 for i in range(0, responseSize):
 
                     if 'startDate' in self.kwargs:
                         # HistoricalDataRequest
-                        output         = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA)
+                        output         = blpapi.event.MessageIterator(event).__next__().getElement(SECURITY_DATA) if BLPAPI_VERSION > 3.17 else blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA)
                         security       = output.getElement(SECURITY).getValueAsString()
                         fieldDataArray = output.getElement(FIELD_DATA)
                         fieldDataList  = [fieldDataArray.getValueAsElement(i) for i in range(0, fieldDataArray.numValues())]
                         dates          = map(lambda x: x.getElement(DATE).getValueAsString(), fieldDataList)
                         outDF          = pandas.DataFrame(index=dates, columns=self.fields)
-                        outDF.index    = pandas.to_datetime(outDF.index, format='%Y-%m-%d%z')
+                        try:
+                            outDF.index    = pandas.to_datetime(outDF.index, format='%Y-%m-%d%z')
+                        except:
+                            outDF.index = pandas.to_datetime(outDF.index)
 
                         for field in self.fields:
                             data = []
@@ -286,7 +291,7 @@ class BLPTS:
 
                     else:
                         # ReferenceDataRequest
-                        output   = blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getValueAsElement(i)
+                        output   = blpapi.event.MessageIterator(event).__next__().getElement(SECURITY_DATA).getValueAsElement(i) if BLPAPI_VERSION > 3.17 else blpapi.event.MessageIterator(event).next().getElement(SECURITY_DATA).getValueAsElement(i)
                         n_elmts  = output.getElement(FIELD_DATA).numElements()
                         security = output.getElement(SECURITY).getValueAsString()
                         for j in range(0, n_elmts):
@@ -295,7 +300,7 @@ class BLPTS:
                             outData  = _dict_from_element(data)
                             self.updateObservers(security=security, field=field, data=outData) # update one security one field
                             self.output.loc[security, field] = outData
-                            
+
                         if n_elmts > 0:
                             self.updateObservers(security=security, field='ALL', data=self.output.loc[security]) # update one security all fields
                         else:
@@ -397,7 +402,7 @@ class BLPStream(threading.Thread):
                     self.handleOtherEvent(event)
 
     def handleDataEvent(self, event):
-        output              = blpapi.event.MessageIterator(event).next()
+        output              = blpapi.event.MessageIterator(event).__next__() if BLPAPI_VERSION > 3.17 else blpapi.event.MessageIterator(event).next()
         self.lastUpdateTime = datetime.datetime.now()
         corrID              = output.correlationIds()[0].value()
         security            = self.dictCorrID[corrID]
@@ -417,14 +422,14 @@ class BLPStream(threading.Thread):
                     print('error: ',security,field)#,output.getElement(field).getValueAsString() # this can still error if field is there but is empty
                 self.output.loc[security, field] = data
                 self.updateObservers(time=self.lastUpdateTime, security=security, field=field, corrID=corrID, data=data, bbgTime=self.lastUpdateTimeBlmbrg)
-         
+
         # It can happen that you get an event without the data behind the event!
         self.updateObservers(time=self.lastUpdateTime, security=security, field='ALL', corrID=corrID, data=0, bbgTime=self.lastUpdateTimeBlmbrg)
         # if not isParsed:
         #     print(output.toString())
 
     def handleOtherEvent(self, event):
-        output = blpapi.event.MessageIterator(event).next()
+        output = blpapi.event.MessageIterator(event).__next__() if BLPAPI_VERSION > 3.17 else blpapi.event.MessageIterator(event).next()
         msg = output.toString()
         if event.eventType() == blpapi.event.Event.AUTHORIZATION_STATUS:
             print("Authorization event: " + msg)
@@ -542,7 +547,7 @@ class ObserverStreamExample(Observer):
 
 
 def streamPatternExample():
-    stream = BLPStream('ESU2 Index', ['BID', 'ASK'], 0, 1)
+    stream = BLPStream('ESZ2 Index', ['BID', 'ASK'], 0, 1)
     #stream=BLPStream('XS1151974877 CORP',['BID','ASK'],0,1) #Note that for a bond only BID gets updated even if ASK moves.
     obs = ObserverStreamExample()
     stream.register(obs)
